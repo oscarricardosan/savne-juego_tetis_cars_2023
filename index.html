@@ -1,0 +1,361 @@
+<html>
+    <head>
+        <script src="https://cdn.jsdelivr.net/npm/vue@2.5.16/dist/vue.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/underscore@1.13.6/underscore-umd-min.js"></script>
+        <style>
+            *{
+                box-sizing: border-box;
+            }
+            .street-field{
+                display: inline-block;
+                height: 33px;
+                width: 33px;
+                border: 1px solid #f3f3f3;
+                color: white;
+            }
+            .type-0{
+                background: none;
+            }
+            .type-1{
+                background: green;
+            }
+            .type-2{
+                background: red;
+            }
+            body{
+                background: black;
+                margin: 10em 0  0 44em;
+            }
+            #escenary{
+                border: 1px solid white;
+                display: inline-block;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="escenary" style="text-align: center">
+            <div v-if="screen === 'street'">
+                <div>
+                    <div v-for="row in matrix">
+                        <div v-for="field in row" :class="'street-field type-'+field"></div>
+                    </div>
+                </div>
+            </div>
+            <button v-on:click="start_game" v-if="screen !== 'street'">Iniciar</button>
+            <button onClick="window.location.reload();" v-else>Reiniciar</button>
+            <p style="color: #f3f3f3" v-if="screen === 'street'">
+                Velocidad de enemigos: {{ friendly_velocity }}
+                <br>
+                Carros esquivados: {{ score }}
+                <br>
+                Siguiente nivel en: {{ enemies_next_level - score }}
+            </p>
+        </div>
+        <script>
+            const LANES= 2;
+
+            const EMPY_FIELD= 0;
+            const AVATAR_FIELD= 1;
+            const ENEMY_FIELD= 2;
+
+            const LIMIT_LEFT= 2;
+            const LIMIT_RIGHT= LANES * 3;
+
+            const MAP_ROWS= 18;
+            const MAP_COLS= (LANES*3) + 4;
+
+            let PlayerFactory= function (){
+
+                let _position_player= [];
+
+                function create(){
+                    _position_player= [
+                        [17, 2],
+                        [17, 4],
+                        [16, 3],
+                        [15, 3],
+                        [14, 3],
+                        [15, 2],
+                        [15, 4],
+                    ];
+                    return this;
+                }
+
+                function get_coordinates(){
+                    return _position_player;
+                }
+
+                function move_x(distance){
+                    let new_position_player= _.clone(_position_player);
+                    for (var x = 0; x < _position_player.length; x++) {
+                        new_position_player[x][1]=  new_position_player[x][1]+distance;
+                    }
+                    _position_player= new_position_player;
+                }
+
+                function move_right(){
+                    if(_position_player[1][1] >= LIMIT_RIGHT) return false;
+                    move_x(+3);
+                }
+
+                function move_left(){
+                    if(_position_player[0][1] <= LIMIT_LEFT) return false;
+                    move_x(-3);
+                }
+
+                return {
+                    create: create,
+                    get_coordinates: get_coordinates,
+                    move_right: move_right,
+                    move_left: move_left,
+                };
+            };
+
+            let EnemyFactory= function (){
+
+                let _position_enemy= [];
+
+                function create(){
+                    let enemy_lane= getRandomInt(0, LANES-1);
+                    _position_enemy=[
+                        [-4, 3 + (enemy_lane * 3)],
+                        [-3, 2 + (enemy_lane * 3)],
+                        [-3, 3 + (enemy_lane * 3)],
+                        [-3, 4 + (enemy_lane * 3)],
+                        [-2, 3 + (enemy_lane * 3)],
+                        [-1, 2 + (enemy_lane * 3)],
+                        [-1, 4 + (enemy_lane * 3)]
+                    ];
+                    return this;
+                }
+
+                function get_coordinates(){
+                    return _position_enemy;
+                }
+
+                function move_down(){
+                    let new_position_enemy= _.clone(_position_enemy);
+                    for (var x = 0; x < _position_enemy.length; x++) {
+                        new_position_enemy[x][0]=  new_position_enemy[x][0]+1;
+                    }
+                    _position_enemy= new_position_enemy;
+                }
+
+                return {
+                    create: create,
+                    get_coordinates: get_coordinates,
+                    move_down: move_down,
+                };
+
+            };
+
+            const GAME = new Vue({
+                el: '#escenary',
+                data: {
+                    player: undefined,
+                    enemies: [],
+                    matrix: [],
+                    screen: 'start',
+                    stop: false,
+                    friendly_velocity: 0,
+                    velocity: 404,
+                    enemies_next_level: 4,
+                    score: 0,
+                    round_enemy: undefined,
+                },
+                mounted: function(){
+                    this.generate_matrix_world();
+                },
+                created() {
+                    window.addEventListener('keydown', (e) => {
+                        if(this.stop === true)return;
+                        if (this.screen == 'street') {
+                            if (e.key == 'ArrowRight') {
+                                this.move_player_to_right();
+                            }else if (e.key == 'ArrowLeft') {
+                                this.move_player_to_left();
+                            }
+                        }
+                    });
+                },
+                methods: {
+                    generate_matrix_world: function(){
+                        for (var row = 0; row < MAP_ROWS; row++) {
+                            let row_temp= [];
+                            for (var col = 0; col < MAP_COLS; col++) {
+                                row_temp.push(EMPY_FIELD);
+                            }
+                            this.matrix.push(row_temp);
+                        }
+                    },
+                    start_game: function(){
+                        this.stop= false;
+                        this.screen= 'street';
+                        this.calculate_friendly_velocity();
+                        this.init_player_avatar();
+                        this.render_player_avatar();
+                        this.render_escenary();
+                    },
+                    stop_game: function(){
+                        this.stop= true;
+                    },
+                    init_player_avatar: function (){
+                        this.player= PlayerFactory().create();
+                    },
+                    move_player_to_right: function(){
+                        this.remove_player_avatar();
+                        this.player.move_right();
+                        this.detect_player_collision();
+                        this.render_player_avatar();
+                    },
+                    move_player_to_left: function(){
+                        this.remove_player_avatar();
+                        this.player.move_left();
+                        this.detect_player_collision();
+                        this.render_player_avatar();
+                    },
+                    render_player_avatar: function (){
+                        let temp_matrix= _.clone(this.matrix);
+                        let position_player= this.player.get_coordinates();
+                        for (var x = 0; x < position_player.length; x++) {
+                            temp_matrix[position_player[x][0]][position_player[x][1]]= AVATAR_FIELD;
+                        }
+                        this.matrix= temp_matrix;
+                    },
+                    remove_player_avatar: function (){
+                        let temp_matrix= _.clone(this.matrix);
+                        let position_player= this.player.get_coordinates();
+                        for (var x = 0; x < position_player.length; x++) {
+                            temp_matrix[position_player[x][0]][position_player[x][1]]= EMPY_FIELD;
+                        }
+                        this.matrix= temp_matrix;
+                    },
+                    render_escenary: function (){
+                        this.determine_enemy_location();
+                        if(this.stop===true)return;
+                        this.calculate_velocity();
+                        this.render_player_avatar();
+                        setTimeout(() => this.render_escenary(), this.velocity);
+                    },
+                    determine_enemy_location: function (){
+                        this.create_enemies();
+                        this.remove_enemies();
+                        this.move_enemies();
+                        this.detect_enemy_collision();
+                        this.render_enemies();
+                    },
+                    create_enemies: function (){
+                        if(this.round_enemy === undefined || this.round_enemy === 7){
+                            this.enemies.push(EnemyFactory().create());
+                            this.round_enemy= 0;
+                        }else{
+                            this.round_enemy++;
+                        }
+                    },
+                    move_enemies: function (){
+                        for (var id_enemy = 0; id_enemy < this.enemies.length; id_enemy++) {
+                            this.enemies[id_enemy].move_down();
+                        }
+                    },
+                    render_enemies: function (){
+                        let temp_matrix= _.clone(this.matrix);
+
+                        this.discard_overrun_enemies();1
+                        for (var id_enemy = 0; id_enemy < this.enemies.length; id_enemy++) {
+                            let position_enemy= this.enemies[id_enemy].get_coordinates();
+                            for (var x = 0; x < position_enemy.length; x++) {
+                                if(position_enemy[x][0] < 0) {
+                                    continue;
+                                }
+                                if(position_enemy[x][0] >= MAP_ROWS)continue;
+                                temp_matrix[position_enemy[x][0]][position_enemy[x][1]]= ENEMY_FIELD;
+                            }
+                        }
+
+                        this.matrix= temp_matrix;
+                    },
+
+                    discard_overrun_enemies: function(){
+                        for (var id_enemy = 0; id_enemy < this.enemies.length; id_enemy++) {
+                            let position_enemy= this.enemies[id_enemy].get_coordinates();
+                            let dead_parts= 0;
+                            for (var x = 0; x < position_enemy.length; x++) {
+                                if(position_enemy[x][0] >= MAP_ROWS) dead_parts++;
+                            }
+                            if(dead_parts === position_enemy.length) {
+                                this.enemies.splice(id_enemy, 1);
+                                this.score++;
+                            }
+                        }
+                    },
+
+                    detect_player_collision: function(){
+                        let position_player= this.player.get_coordinates();
+                        for (var x = 0; x < position_player.length; x++) {
+                            if(
+                                this.matrix[position_player[x][0]][position_player[x][1]] === ENEMY_FIELD
+                            ){
+                                this.game_over();
+                                return ;
+                            }
+                        }
+                    },
+
+                    detect_enemy_collision: function(){
+                        for (var id_enemy = 0; id_enemy < this.enemies.length; id_enemy++) {
+                            let position_enemy= this.enemies[id_enemy].get_coordinates();
+                            for (var x = 0; x < position_enemy.length; x++) {
+                                if(position_enemy[x][0] < 0)continue;
+                                if(position_enemy[x][0] >= MAP_ROWS)continue;
+                                if(this.matrix[position_enemy[x][0]][position_enemy[x][1]] === AVATAR_FIELD){
+                                    this.game_over();
+                                    return ;
+                                }
+                            }
+                        }
+                    },
+
+                    game_over: function(){
+                        alert("Juego terminado, has chocado. \n\nCarros esquivados: "+this.score+"\nVelocidad de enemigos: "+this.friendly_velocity);
+                        this.stop_game();
+                    },
+
+                    calculate_velocity: function(){
+                        if(this.score === this.enemies_next_level){
+                            this.velocity= this.velocity - 40;
+                            this.enemies_next_level= this.enemies_next_level * 2;
+                            this.calculate_friendly_velocity();
+                        }
+                    },
+
+                    calculate_friendly_velocity: function(){
+                        this.friendly_velocity= 500 - this.velocity;
+                    },
+
+                    remove_enemies: function (){
+                        let temp_matrix= _.clone(this.matrix);
+
+                        for (var id_enemy = 0; id_enemy < this.enemies.length; id_enemy++) {
+                            let position_enemy= this.enemies[id_enemy].get_coordinates();
+                            for (var x = 0; x < position_enemy.length; x++) {
+                                if(position_enemy[x][0] < 0)continue;
+                                if(position_enemy[x][0] >= MAP_ROWS)continue;
+                                temp_matrix[position_enemy[x][0]][position_enemy[x][1]]= EMPY_FIELD;
+                            }
+                        }
+                        this.matrix= temp_matrix;
+                    },
+                    clear_escenary: function (){
+                        this.generate_matrix_world();
+                    }
+                }
+            });
+
+            function getRandomInt(min, max) {
+                min = Math.ceil(min);
+                max = Math.floor(max);
+                return Math.floor(Math.random() * (max - min + 1) + min);
+            }
+        </script>
+    </body>
+</html>
